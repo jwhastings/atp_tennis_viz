@@ -109,70 +109,9 @@ atp_tennis <- read_csv("atp_matches.csv", col_types = c_types) %>%
   mutate(tourney_date = ymd(tourney_date))
 ```
 
-```{r, eval = FALSE, include = FALSE}
-c_types <- c(tourney_id    = "c", tourney_name = "c", surface   = "c", draw_size = "i",
-             tourney_level = "c", tourney_date = "c", match_num = "c",
-              
-             winner_id   = "c", winner_seed = "i", winner_entry = "c", winner_name = "c",
-             winner_hand = "c", winner_ht   = "d", winner_ioc   = "c", winner_age  = "d",
-              
-             loser_id   = "c", loser_seed = "i", loser_entry = "c", loser_name = "c",
-             loser_hand = "c", loser_ht   = "d", loser_ioc   = "c", loser_age  = "d",
-              
-             score = "c", best_of = "i", round = "c", minutes = "i",
-              
-             w_ace    = "i", w_df    = "i", w_svpt    = "i", w_1stIn   = "i", w_1stWon = "i",
-             w_2ndWon = "i", w_SvGms = "i", w_bpSaved = "i", w_bpFaced = "i",
-              
-             l_ace    = "i", l_df    = "i", l_svpt    = "i", l_1stIn   = "i", l_1stWon = "i",
-             l_2ndWon = "i", l_SvGms = "i", l_bpSaved = "i", l_bpFaced = "i",
-              
-             winner_rank = "i", winner_rank_points = "i",
-             loser_rank  = "i", loser_rank_points  = "i")
-
-tennis_import <- read_csv("https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/atp_matches_1968.csv",
-  col_types = c_types) %>%
-  mutate(source = "atp_matches_1968.csv")
-
-for (i in 1969:2021) {
-  filename <- paste0("atp_matches_", i, ".csv")
-  link <- paste0("https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/", filename)
-  
-  tennis_import <- tennis_import %>%
-    bind_rows(
-      read_csv(link, col_types = c_types) %>%
-      mutate(source = filename)
-    )
-}
-
-```
-
 ```{r}
-gs_wins <- atp_tennis %>%
-  filter(tourney_level == "G", round == "F") %>%
-  select(tourney_id,
-         tourney_name,
-         surface,
-         tourney_date,
-         winner_id,
-         winner_name,
-         winner_age) %>%
-  rename(player_id = winner_id,
-         player_name = winner_name,
-         player_age = winner_age) %>%
-  mutate(floor_age = floor(player_age),
-         win = 1,
-         outcome = "winner")
-
-total_gs_wins <- gs_wins %>%
-  slice_max(tourney_date)
-
-# get GS winners first match
-gs_winners <- gs_wins %>%
-  distinct(player_id, player_name)
-
-gs_winners_matches <- atp_tennis %>%
-  filter(tourney_level == "G", round != "F") %>%
+gs_matches <- atp_tennis %>%
+  filter(tourney_level == "G") %>%
   select(tourney_id,
          tourney_name,
          surface,
@@ -182,30 +121,32 @@ gs_winners_matches <- atp_tennis %>%
          winner_age,
          loser_id,
          loser_name,
-         loser_age) %>%
+         loser_age,
+         round) %>%
   unite(winner_id, winner_name, col = "winner", sep = ";") %>%
   unite(loser_id, loser_name, col = "loser", sep = ";") %>%
   pivot_longer(cols = c(winner, loser), names_to = "outcome", values_to = "player") %>%
   separate(player, into = c("player_id", "player_name"), sep = ";") %>%
-  mutate(player_age = ifelse(outcome == "winner", winner_age, loser_age)) %>%
+  mutate(player_age = if_else(outcome == "winner", winner_age, loser_age)) %>%
   select(-c(winner_age, loser_age)) %>%
   group_by(player_id, player_name) %>%
   arrange(tourney_date) %>%
-  inner_join(gs_winners, by = c("player_id", "player_name")) %>%
   mutate(floor_age = floor(player_age),
-         win = 0) %>%
-  distinct(player_id, player_name, floor_age, year(tourney_date), .keep_all = TRUE) %>%
-  select(-`year(tourney_date)`) %>%
-  bind_rows(gs_wins) %>%
-  group_by(player_id, player_name) %>%
+         win = if_else((round == "F" & outcome == "winner"), 1, 0)) %>%
   arrange(player_id, player_name, tourney_date) %>%
   mutate(cum_gs_wins = cumsum(win),
          total_gs_wins = sum(win),
-         double_digits = ifelse(total_gs_wins >= 10, TRUE, FALSE),
-         big_3 = ifelse(player_name %in% c("Roger Federer", "Rafael Nadal", "Novak Djokovic"),
+         double_digits = if_else(total_gs_wins >= 10, TRUE, FALSE),
+         big_3 = if_else(player_name %in% c("Roger Federer", "Rafael Nadal", "Novak Djokovic"),
                         TRUE, FALSE))
 
-gs_total_wins <- gs_winners_matches %>%
+# get names of players who have won at least 1 grand slam
+gs_winners <- filter(gs_matches, win > 0) %>%
+  distinct(player_id, player_name)
+
+gs_matches_winners <- inner_join(gs_matches, gs_winners, by = c("player_id", "player_name"))
+
+gs_total_wins <- gs_matches_winners %>%
   arrange(desc(tourney_date)) %>%
   slice_head(n = 1)
 
@@ -217,15 +158,15 @@ var <- "big_3"
 
 # by age
 ggplot() +
-  # <10 wins
-  geom_line(data = filter(gs_winners_matches, !(!!sym(var))),
+  # not big 3
+  geom_line(data = filter(gs_matches_winners, !(!!sym(var))),
             aes(x = floor_age, y = cum_gs_wins, group = player_name),
             color = "dark gray") +
   geom_point(data = filter(gs_total_wins, !(!!sym(var))),
              aes(x = floor_age, y = total_gs_wins, group = player_name),
              color = "dark gray") +
-  # >=10 wins
-  geom_line(data = filter(gs_winners_matches, !!sym(var)),
+  # big 3
+  geom_line(data = filter(gs_matches_winners, !!sym(var)),
             aes(x = floor_age, y = cum_gs_wins, color = player_name, group = player_name),
             size = 1, alpha = 0.5) +
   geom_point(data = filter(gs_total_wins, !!sym(var)),
@@ -239,14 +180,14 @@ ggplot() +
 
 p1 <- ggplot() +
   # <10 wins
-  geom_line(data = filter(gs_winners_matches, !(!!sym(var))),
+  geom_line(data = filter(gs_matches_winners, !(!!sym(var))),
             aes(x = year(tourney_date), y = cum_gs_wins, group = player_name),
             color = "dark gray") +
   geom_point(data = filter(gs_total_wins, !(!!sym(var))),
              aes(x = year(tourney_date), y = total_gs_wins, group = player_name),
              color = "dark gray") +
   # >= 10 wins
-  geom_line(data = filter(gs_winners_matches, !!sym(var)),
+  geom_line(data = filter(gs_matches_winners, !!sym(var)),
             aes(x = year(tourney_date), y = cum_gs_wins,
                 color = player_name, group = player_name)) +
   geom_point(data = filter(gs_total_wins, !!sym(var)), 
