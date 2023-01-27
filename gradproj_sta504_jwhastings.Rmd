@@ -1,35 +1,41 @@
 ---
-title: "Graduate Project"
-subtitle: "STA 504"
-author: "Joey Hastings"
+title: "The Big Three"
 output:
-  rmdformats::html_clean:
+  rmdformats::html_docco:
     self_contained: true
     lightbox: true
     gallery: true
     thumbnails: false
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include = FALSE}
 knitr::opts_chunk$set(cache = TRUE, fig.align = "center", fig.height = 4, fig.width = 8)
 library(ggthemes)
 library(httr)
 library(lubridate)
-library(plotly)
 library(tidyverse)
+library(gganimate)
+library(kableExtra)
+
+colorize <- function(x, color) {
+  if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
 ```
 
+```{r data-wrangle, eval = FALSE, echo = FALSE}
 # Download ATP data from Github
 
-https://github.com/JeffSackmann/tennis_atp
+# https://github.com/JeffSackmann/tennis_atp
 
-```{r data-wrangle, eval = FALSE}
 # https://stackoverflow.com/questions/25485216/how-to-get-list-files-from-a-github-repository-folder-using-r
 req <- GET("https://api.github.com/repos/JeffSackmann/tennis_atp/git/trees/master?recursive=1")
 stop_for_status(req)
 file_list <- unlist(lapply(content(req)$tree, "[", "path"), use.names = F)
 
-# Source of all .csv files
+# source of all .csv files
 github_master_url <- "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/"
 
 # https://stackoverflow.com/questions/11433432/how-to-import-multiple-csv-files-at-once
@@ -42,10 +48,11 @@ atp_tennis_raw_data <-
 write_csv(atp_tennis_raw_data, "data/atp_matches.csv")
 ```
 
+
+```{r data-import, echo = FALSE}
 # Import all ATP data
 
-```{r data-import}
-# Common column types for .csv files of interest
+# common column types for .csv files of interest
 c_types <-
   c(
     tourney_id    = "c",
@@ -105,6 +112,7 @@ c_types <-
     loser_rank_points  = "i"
   )
 
+# import data
 atp_tennis <- read_csv("data/atp_matches.csv", col_types = c_types) %>%
   mutate(tourney_name = recode_factor(tourney_name,
                                       "Australian Open" = "Australian Open",
@@ -115,11 +123,12 @@ atp_tennis <- read_csv("data/atp_matches.csv", col_types = c_types) %>%
          tourney_year = year(tourney_date))
 ```
 
+```{r grand-slam-data, echo = FALSE}
 # Process data
 
-```{r grand-slam-data}
 big_3_names <- c("Roger Federer", "Rafael Nadal", "Novak Djokovic")
 
+# subset of only grand slam matches, reformat a bit
 gs_matches <- atp_tennis %>%
   filter(tourney_level == "G") %>%
   select(
@@ -177,16 +186,22 @@ gs_total_wins <- gs_matches_winners %>%
   slice_head(n = 1)
 
 by_var <- "big_3"
+
+big_3_colors <- c("#1E8FD5", # Djokovic
+                  "#E3783B", # Nadal
+                  "#A2C128") # Federer
+
+big_3_colors_dark <- c("#1978B3", # Djokovic
+                       "#A14917", # Nadal
+                       "#80981F") # Federer
+
 ```
 
-# Plots
-
-
+```{r gs-wins-age, echo = FALSE}
 ## GS wins by age
-```{r gs-wins-age}
 
 # by age
-ggplot() +
+lplot1 <- ggplot() +
   # not big 3
   geom_line(
     data = filter(gs_matches_winners, !(!!sym(by_var))),
@@ -208,7 +223,7 @@ ggplot() +
       group = player_name
     ),
     size = 1,
-    alpha = 0.5
+    alpha = 0.7
   ) +
   geom_point(
     data = filter(gs_total_wins, !!sym(by_var)),
@@ -218,18 +233,24 @@ ggplot() +
       color = player_name,
       group = player_name
     ),
-    alpha = 0.5
+    alpha = 1
   ) +
+  scale_color_manual(values = big_3_colors) +
   theme_few() +
-  theme(legend.position = "bottom") +
-  labs(color = "")
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Major Wins by Age",
+       x = "Age",
+       y = "Major Wins",
+       color = "")
 ```
 
+```{r gs-wins-year, echo = FALSE}
 ## GS wins by year
-```{r gs-wins-year}
+
 # by year
 
-ggplot() +
+lplot2 <- ggplot() +
   # category: false
   geom_line(
     data = filter(gs_matches_winners, !(!!sym(by_var))),
@@ -249,6 +270,11 @@ ggplot() +
     ),
     color = "dark gray"
   ) +
+  geom_text(data = filter(gs_total_wins, !(!!sym(by_var)),
+                          total_gs_wins >= 10),
+            aes(x = tourney_year, y = total_gs_wins,
+                label = player_name),
+            vjust = -1) +
   # category: true
   geom_line(
     data = filter(gs_matches_winners, !!sym(by_var)),
@@ -258,7 +284,8 @@ ggplot() +
       color = player_name,
       group = player_name
     ),
-    alpha = 0.5
+    size = 1,
+    alpha = 0.7
   ) +
   geom_point(
     data = filter(gs_total_wins, !!sym(by_var)),
@@ -268,15 +295,21 @@ ggplot() +
       color = player_name,
       group = player_name
     ),
-    alpha = 0.5
+    alpha = 1
   ) +
+  scale_color_manual(values = big_3_colors) +
   theme_few() +
-  theme(legend.position = "bottom") +
-  labs(color = "")
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Major Wins by Year",
+       x = "Year",
+       y = "Major Wins",
+       color = "")
 ```
 
+```{r gs-finals-2003, echo = FALSE}
 ## GS wins comparison: big 3 vs. others since 2003
-```{r gs-finals-2003, fig.height = 10, fig.width = 9}
+
 # grand slam finals since 2003
 gs_final_2003 <- filter(atp_tennis,
                         tourney_level == "G",
@@ -284,28 +317,38 @@ gs_final_2003 <- filter(atp_tennis,
                         tourney_year >= 2003) %>%
   mutate(
     big_3 = case_when(
-      winner_name == "Roger Federer" ~ "Federer",
-      winner_name == "Rafael Nadal" ~ "Nadal",
-      winner_name == "Novak Djokovic" ~ "Djokovic",
-      TRUE ~ "Other"
+      winner_name == "Roger Federer" ~ winner_name,
+      winner_name == "Rafael Nadal" ~ winner_name,
+      winner_name == "Novak Djokovic" ~ winner_name,
+      TRUE ~ "ZZOther"
     )
   )
 
 
-ggplot(data = gs_final_2003) +
+tiles <- ggplot(data = gs_final_2003) +
   geom_tile(aes(x = tourney_name, y = tourney_year, fill = big_3), color = "black") +
   geom_text(aes(x = tourney_name, y = tourney_year, label = winner_name),
             fontface = "bold") +
-  scale_y_reverse(breaks = seq(2003, 2021)) +
+  scale_y_reverse(breaks = seq(2003, 2022)) +
   coord_cartesian(expand = FALSE) +
-  scale_fill_manual(values = c("#5CAE1E", "#6FD123", "#66C021", "gray")) +
+  scale_fill_manual(values = c(big_3_colors, "#A9A9A9")) +
   theme_few() +
-  theme(legend.position = "none")
+  theme(axis.ticks = element_blank(),
+        legend.position = "none",
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Major Winners since 2003",
+       x = "",
+       y = "Year")
 ```
 
+```{r big-3-comparison, echo = FALSE}
 ## big 3 wins comparison by slam
 
-```{r big-3-comparison}
+slam_colors <- c("#0091D2", # AO
+                 "#C85A19", # RG
+                 "#266C40", # Wimbledon
+                 "#00288C") # USO
+
 gs_wins_b3 <-
   filter(gs_matches,
          round == "F",
@@ -314,8 +357,168 @@ gs_wins_b3 <-
   group_by(tourney_name, player_name) %>%
   summarize(win = n(), .groups = "keep")
 
-ggplot(data = gs_wins_b3) +
-  geom_col(aes(x = player_name, y = win, fill = tourney_name), position = position_dodge2()) +
+bplot1 <- ggplot(data = gs_wins_b3) +
+  geom_col(aes(x = player_name, y = win, fill = tourney_name), color = "black", position = position_dodge2()) +
+  geom_text(aes(x = player_name, y = win, label = win), position = position_dodge2(0.9), vjust = -1, fontface = "bold") +
+  scale_y_continuous(limits = c(0, 15)) +
+  scale_fill_manual(values = slam_colors) +
+  coord_cartesian(expand = FALSE) +
   theme_few() +
-  theme(legend.position = "bottom")
+  theme(axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = "bottom",
+        panel.border = element_blank(),
+        panel.spacing.y = unit(0, "cm"),
+        plot.margin = margin(5, 5, 5, -10, "point"),
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Big Three Wins by Major",
+       x = "",
+       y = "",
+       fill = "")
 ```
+
+```{r head-to-head, echo = FALSE}
+## Head to head (all matches)
+
+federer_win <- atp_tennis %>%
+  select(winner_name, loser_name) %>%
+  filter(winner_name == "Roger Federer",
+         loser_name %in% c("Novak Djokovic", "Rafael Nadal")) %>%
+  group_by(loser_name) %>%
+  summarize(win = n())
+
+federer_loss <- atp_tennis %>%
+  select(winner_name, loser_name) %>%
+  filter(winner_name %in% c("Novak Djokovic", "Rafael Nadal"),
+         loser_name == "Roger Federer",
+  ) %>%
+  group_by(winner_name) %>%
+  summarize(loss = n())
+
+federer <-
+  full_join(federer_win, federer_loss, by = c("loser_name" = "winner_name")) %>%
+  rename(opponent = loser_name) %>%
+  mutate(name = "Roger Federer")
+
+##
+
+nadal_win <- atp_tennis %>%
+  select(winner_name, loser_name) %>%
+  filter(winner_name == "Rafael Nadal",
+         loser_name %in% c("Novak Djokovic", "Roger Federer")) %>%
+  group_by(loser_name) %>%
+  summarize(win = n())
+
+nadal_loss <- atp_tennis %>%
+  select(winner_name, loser_name) %>%
+  filter(winner_name %in% c("Novak Djokovic", "Roger Federer"),
+         loser_name == "Rafael Nadal",
+  ) %>%
+  group_by(winner_name) %>%
+  summarize(loss = n())
+
+nadal <-
+  full_join(nadal_win, nadal_loss, by = c("loser_name" = "winner_name")) %>%
+  rename(opponent = loser_name) %>%
+  mutate(name = "Rafael Nadal")
+
+##
+
+djokovic_win <- atp_tennis %>%
+  select(winner_name, loser_name) %>%
+  filter(winner_name == "Novak Djokovic",
+         loser_name %in% c("Rafael Nadal", "Roger Federer")) %>%
+  group_by(loser_name) %>%
+  summarize(win = n())
+
+djokovic_loss <- atp_tennis %>%
+  select(winner_name, loser_name) %>%
+  filter(winner_name %in% c("Rafael Nadal", "Roger Federer"),
+         loser_name == "Novak Djokovic",
+  ) %>%
+  group_by(winner_name) %>%
+  summarize(loss = n())
+
+djokovic <-
+  full_join(djokovic_win, djokovic_loss, by = c("loser_name" = "winner_name")) %>%
+  rename(opponent = loser_name) %>%
+  mutate(name = "Novak Djokovic")
+
+win_loss <- bind_rows(djokovic, federer, nadal) %>%
+  relocate(name, .before = everything()) %>%
+  mutate(winloss = paste0(win, "-", loss)) %>%
+  select(-win, -loss) %>%
+  arrange(name, opponent) %>%
+  pivot_wider(names_from = opponent, values_from = winloss) %>%
+  select(name, `Novak Djokovic`, `Rafael Nadal`, `Roger Federer`) %>%
+  replace_na(list(`Novak Djokovic` = "", `Rafael Nadal` = "", `Roger Federer` = ""))
+
+table <- win_loss %>% column_to_rownames(var = "name") %>%
+  kbl(align = "ccc") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "bordered")) %>%
+  #kable_styling() %>%
+  column_spec(1, bold = T, background = "#F0F0F0") %>%
+  row_spec(0, bold = T) %>%
+  row_spec(1, color = "#1978B3") %>%
+  row_spec(2, color = "#A14917") %>%
+  row_spec(3, color = "#80981F")
+```
+
+
+*Author: Joey Hastings*
+
+***
+
+Men's professional tennis has existed for over a century. **Wimbledon**, one of the most prestigious tennis tournaments, had its inaugural season in 1877[^1]. The two organizations that govern men's tennis today are the **Association of Tennis Professionals** (ATP)[^2] and the **International Tennis Federation** (ITF)[^3].
+
+The ATP holds the ATP Tour which is comprised of four different lower level tournaments: ATP Masters 1000, ATP 500, ATP 250, and the ATP Cup[^4]. The ITF organizes and sanctions the four **grand slams majors** (tournaments recognized as the most important each year): the **`r colorize("Australian Open", slam_colors[1])`**, **`r colorize("French Open", slam_colors[2])`**, **`r colorize("Wimbledon", slam_colors[3])`**, and the **`r colorize("US Open", slam_colors[4])`**. Winning just one of these four tournaments is one of the most envied achievements by professional tennis players. 
+
+Despite the tough competition at this level, three male players have emerged over the past two decades in men's singles due to their incredible success. The **Big Three** is a nickname given to **`r colorize("Novak Djokovic", big_3_colors_dark[1])`**, **`r colorize("Rafael Nadal", big_3_colors_dark[2])`**, and **`r colorize("Roger Federer", big_3_colors_dark[3])`** for their never-before-seen dominance in the scene.
+
+So, how dominant could they be? Let's take a look at the number of major wins different players have won since 1968:
+
+```{r, echo = FALSE}
+lplot2
+```
+
+Each of the big three have at least **20** major wins! The only other two players with double-digit wins are **Pete Sampras** and **Bjorn Borg**, winning 14 and 11, respectively.
+
+What about their longevity? How well have they been able to continue their success throughout their career?
+
+```{r, echo = FALSE}
+lplot1
+```
+
+The big three have continued their success well into their mid-to-late 30's!
+
+To give another perspective on how dominant the big three have been, let's take a look at all the major winners since 2003 (the year **`r colorize("Roger Federer", big_3_colors_dark[3])`** won his first major):
+
+```{r, echo = FALSE, fig.height = 10, fig.width = 8}
+tiles
+```
+
+The trio has won **61** of the last **76** major tournaments (just over an 80% win rate). Note that **`r colorize("Wimbledon", slam_colors[3])`** in 2020 was cancelled due to concerns regarding the COVID-19 pandemic[^5].
+
+How are the major wins split between each member of the big three? Do they each perform the same at each tournament?
+
+```{r, echo = FALSE}
+bplot1
+```
+
+We can see that there is quite a difference in majors won by each player. It is clear that **`r colorize("Rafael Nadal", big_3_colors_dark[2])`** is the most dominant at the **`r colorize("French Open", slam_colors[2])`**, having won **13** of them. **`r colorize("Novak Djokovic", big_3_colors_dark[1])`** has won the most **`r colorize("Australian Open", slam_colors[1])`** titles with **9**, and **`r colorize("Roger Federer", big_3_colors_dark[3])`** has won the most **`r colorize("Wimbledon", slam_colors[3])`** and **`r colorize("US Open", slam_colors[4])`** titles, at **8** and **5**, respectively.
+
+What about the competition between the big three? The table below indicates the player's  win/loss ratio against the opponent in the corresponding column across all ATP and ITF matches:
+
+```{r, echo = FALSE}
+table
+```
+
+**`r colorize("Novak Djokovic", big_3_colors_dark[1])`** is the only member to have a win/loss ratio above **1.0** against each of the other two, having won **30** of **58** matches against **`r colorize("Rafael Nadal", big_3_colors_dark[2])`** and **28** of **51** matches against **`r colorize("Roger Federer", big_3_colors_dark[3])`**. The competition between these three has been fierce!
+
+How long will the **big three** dominance reign? With **`r colorize("Rafael Nadal", big_3_colors_dark[2])`** having won the most recent **`r colorize("Australian Open", slam_colors[1])`**, it bumped his major wins to **21** placing him in the lead. If you were to ask me, it doesn't look like their dominance will be ending any time soon.
+
+[^1]: https://web.archive.org/web/20101221222928/http://www.wimbledon.org/en_GB/about/history/1877.html
+[^2]: https://www.atptour.com/en/corporate/about
+[^3]: https://www.itftennis.com/en/itf-tours/grand-slam-tournaments/
+[^4]: https://www.atptour.com/en/tournaments
+[^5]: https://www.cnn.com/2020/04/01/tennis/wimbledon-canceled-coronavirus-2020-spt-intl/index.html
